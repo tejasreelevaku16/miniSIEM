@@ -20,7 +20,7 @@ import tempfile
 import unittest
 
 from app.database import count_incidents, get_all_incidents, init_db, save_alerts
-from app.services.detector import Alert
+from app.services.detection_engine import Alert
 
 
 class TestMiniSIEMDatabase(unittest.TestCase):

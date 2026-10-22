@@ -10,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 import sys
 
-from app.services.detector import Alert, detect_brute_force, load_logs
+from app.services.csv_parser import load_logs
+from app.services.detection_engine import Alert, detect_brute_force
 from app.database import count_incidents, init_db, save_alerts, DEFAULT_DB_PATH
 
 def format_timestamp(dt: datetime) -> str:

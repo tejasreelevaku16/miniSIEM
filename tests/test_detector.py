@@ -18,7 +18,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.services.detector import Alert, LogEvent, detect_brute_force, load_logs, parse_log_row, parse_timestamp
+from app.services.csv_parser import LogEvent, load_logs, parse_log_row, parse_timestamp
+from app.services.detection_engine import Alert, detect_brute_force
 
 class TestMiniSIEMDetector(unittest.TestCase):
     """Test suite for log parsing and brute-force detection logic."""

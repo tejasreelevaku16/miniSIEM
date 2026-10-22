@@ -11,7 +11,8 @@ from pathlib import Path
 import sqlite3
 from typing import Optional
 
-from app.services.detector import Alert, LogEvent
+from app.services.csv_parser import LogEvent
+from app.services.detection_engine import Alert
 
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "minisiem.db"

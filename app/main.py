@@ -23,7 +23,7 @@ from app.database import (
     save_security_events,
     save_uploaded_log,
 )
-from app.services.detector import LogEvent, parse_log_row
+from app.services.csv_parser import LogEvent, parse_log_row
 
 app = FastAPI(
     title="Mini-SIEM Log Ingestion API",
