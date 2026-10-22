@@ -11,9 +11,10 @@ from pathlib import Path
 import sqlite3
 from typing import Optional
 
-from detector import Alert, LogEvent
+from app.services.detector import Alert, LogEvent
 
-DEFAULT_DB_PATH = Path(__file__).parent / "minisiem.db"
+
+DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "minisiem.db"
 
 
 def get_db_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:

@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 
-from database import (
+from app.database import (
     DEFAULT_DB_PATH,
     count_security_events,
     get_security_events,
@@ -23,7 +23,7 @@ from database import (
     save_security_events,
     save_uploaded_log,
 )
-from detector import LogEvent, parse_log_row
+from app.services.detector import LogEvent, parse_log_row
 
 app = FastAPI(
     title="Mini-SIEM Log Ingestion API",

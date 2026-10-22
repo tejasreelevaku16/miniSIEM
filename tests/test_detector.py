@@ -18,8 +18,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from detector import Alert, LogEvent, detect_brute_force, load_logs, parse_log_row, parse_timestamp
-
+from app.services.detector import Alert, LogEvent, detect_brute_force, load_logs, parse_log_row, parse_timestamp
 
 class TestMiniSIEMDetector(unittest.TestCase):
     """Test suite for log parsing and brute-force detection logic."""
@@ -193,7 +192,7 @@ class TestMiniSIEMDetector(unittest.TestCase):
 
     def test_sample_logs_file_end_to_end(self):
         """Verify detection on the project's actual sample_logs.csv file."""
-        sample_path = Path(__file__).parent / "sample_logs.csv"
+        sample_path = Path(__file__).parent.parent / "sample_logs" / "sample_logs.csv"
         self.assertTrue(sample_path.exists(), "sample_logs.csv must exist in project root")
 
         events, warnings = load_logs(sample_path)

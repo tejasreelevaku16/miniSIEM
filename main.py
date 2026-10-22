@@ -10,9 +10,8 @@ from datetime import datetime
 from pathlib import Path
 import sys
 
-from detector import Alert, detect_brute_force, load_logs
-from database import count_incidents, init_db, save_alerts, DEFAULT_DB_PATH
-
+from app.services.detector import Alert, detect_brute_force, load_logs
+from app.database import count_incidents, init_db, save_alerts, DEFAULT_DB_PATH
 
 def format_timestamp(dt: datetime) -> str:
     """Formats datetime for clean terminal presentation."""
@@ -116,8 +115,7 @@ def run_siem(file_path: Path) -> int:
 def main() -> None:
     """Main CLI handler."""
     # Allow specifying a custom log file or default to sample_logs.csv in the script's directory
-    default_log_file = Path(__file__).parent / "sample_logs.csv"
-
+    default_log_file = Path(__file__).parent / "sample_logs" / "sample_logs.csv"
     if len(sys.argv) > 1:
         target_file = Path(sys.argv[1])
     else:

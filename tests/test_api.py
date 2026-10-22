@@ -20,9 +20,8 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from app import app, get_db_path
-from database import init_db
-
+from app.main import app, get_db_path
+from app.database import init_db
 
 class TestMiniSIEMApi(unittest.TestCase):
     """Test suite for Mini-SIEM FastAPI endpoints."""

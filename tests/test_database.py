@@ -19,8 +19,8 @@ import sqlite3
 import tempfile
 import unittest
 
-from database import count_incidents, get_all_incidents, init_db, save_alerts
-from detector import Alert
+from app.database import count_incidents, get_all_incidents, init_db, save_alerts
+from app.services.detector import Alert
 
 
 class TestMiniSIEMDatabase(unittest.TestCase):
