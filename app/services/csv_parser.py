@@ -1,164 +1,288 @@
-"""
-Mini-SIEM CSV parsing and validation.
 
-Turns raw CSV rows into validated LogEvent objects. Malformed rows are
-reported as warnings instead of crashing the application.
-"""
-
+import csv
 from dataclasses import dataclass
 from datetime import datetime
-import csv
 from pathlib import Path
 from typing import Optional
 
 
 @dataclass
 class LogEvent:
-    """Represents a single parsed and validated authentication log entry."""
+    """Represents one parsed security log event."""
+
     timestamp: datetime
     source_ip: str
     username: str
     event_type: str
+    source: str = ""
+    outcome: str = ""
+    user_agent: Optional[str] = None
 
 
-def parse_timestamp(timestamp_str: str) -> Optional[datetime]:
+# Required columns for the old CSV format.
+LEGACY_REQUIRED_FIELDS = {
+    "timestamp",
+    "source_ip",
+    "username",
+    "event_type",
+}
+
+# Required columns for the new CSV format.
+NEW_REQUIRED_FIELDS = {
+    "timestamp",
+    "source",
+    "username",
+    "source_ip",
+    "event_type",
+    "outcome",
+}
+
+ALLOWED_OUTCOMES = {
+    "success",
+    "failure",
+    "blocked",
+}
+
+
+def parse_timestamp(timestamp_value: str) -> Optional[datetime]:
     """
-    Safely parses a timestamp string into a datetime object.
+    Convert a timestamp string into a datetime object.
 
-    Supports common formats such as:
-    - '2026-10-20 09:00:15'
-    - '2026-10-20T09:00:15'
-
-    Returns:
-        A datetime object if valid, or None if the format is unparseable.
+    Supports ISO 8601 and common legacy timestamp formats.
     """
-    cleaned = timestamp_str.strip()
-    if not cleaned:
+
+    if not timestamp_value:
         return None
 
-    # Try ISO-8601 parsing first (fast and standard in Python 3.10+)
+    timestamp_value = timestamp_value.strip()
+
+    # First try ISO 8601.
     try:
-        return datetime.fromisoformat(cleaned)
+        return datetime.fromisoformat(
+            timestamp_value.replace("Z", "+00:00")
+        )
     except ValueError:
         pass
 
-    # Fallback to explicit common formats
-    formats = [
+    # Try common timestamp formats.
+    supported_formats = [
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M:%S.%f",
         "%Y/%m/%d %H:%M:%S",
         "%d-%m-%Y %H:%M:%S",
     ]
-    for fmt in formats:
+
+    for timestamp_format in supported_formats:
         try:
-            return datetime.strptime(cleaned, fmt)
+            return datetime.strptime(
+                timestamp_value,
+                timestamp_format,
+            )
         except ValueError:
             continue
 
     return None
 
 
-def parse_log_row(row: dict[str, str], row_number: int) -> tuple[Optional[LogEvent], Optional[str]]:
+def parse_log_row(
+    row: dict,
+    row_number: int = 1,
+):
     """
-    Validates a single CSV dictionary row and converts it to a LogEvent.
+    Parse one CSV row into a LogEvent.
 
-    Args:
-        row: Dictionary of column name to string value from csv.DictReader.
-        row_number: 1-indexed row number in the CSV file for error reporting.
+    Supports:
+    - Legacy CSV format with four required columns.
+    - New CSV format with source and outcome information.
 
     Returns:
-        A tuple of (LogEvent, None) if parsing succeeded,
-        or (None, warning_message) if the row is invalid.
+        (LogEvent, None) when successful.
+        (None, warning_message) when invalid.
     """
-    required_fields = ["timestamp", "source_ip", "username", "event_type"]
 
-    # 1. Verify all expected columns are present
-    for field in required_fields:
-        if field not in row or row[field] is None:
-            return None, f"Row {row_number}: Missing required column '{field}'."
+    # Normalize column names and values.
+    normalized_row = {
+        str(key).strip().lower(): (
+            value.strip() if isinstance(value, str) else value
+        )
+        for key, value in row.items()
+        if key is not None
+    }
 
-    timestamp_raw = row["timestamp"].strip()
-    source_ip = row["source_ip"].strip()
-    username = row["username"].strip()
-    event_type = row["event_type"].strip().upper()
+    # Determine which CSV format is being used.
+    is_new_format = (
+        "source" in normalized_row
+        or "outcome" in normalized_row
+    )
 
-    # 2. Check for empty values
-    if not timestamp_raw or not source_ip or not username or not event_type:
-        return None, f"Row {row_number}: Contains empty value(s) in required fields."
+    required_fields = (
+        NEW_REQUIRED_FIELDS
+        if is_new_format
+        else LEGACY_REQUIRED_FIELDS
+    )
 
-    # 3. Parse timestamp
-    parsed_time = parse_timestamp(timestamp_raw)
-    if parsed_time is None:
-        return None, f"Row {row_number}: Malformed timestamp '{timestamp_raw}'."
+    # Validate required columns.
+    missing_fields = required_fields - set(normalized_row.keys())
 
-    # 4. Construct LogEvent
+    if missing_fields:
+        return None, (
+            f"Row {row_number}: Missing required column(s): "
+            f"{', '.join(sorted(missing_fields))}."
+        )
+
+    # Validate required values.
+    empty_fields = {
+        field
+        for field in required_fields
+        if not normalized_row.get(field)
+    }
+
+    if empty_fields:
+        return None, (
+            f"Row {row_number}: Empty value for required field(s): "
+            f"{', '.join(sorted(empty_fields))}."
+        )
+
+    # Validate timestamp.
+    timestamp_raw = normalized_row["timestamp"]
+
+    timestamp = parse_timestamp(timestamp_raw)
+
+    if timestamp is None:
+        return None, (
+            f"Row {row_number}: Malformed timestamp "
+            f"'{timestamp_raw}'."
+        )
+
+    # Extract common fields.
+    source_ip = normalized_row["source_ip"]
+    username = normalized_row["username"]
+    event_type = normalized_row["event_type"].upper()
+
+    # Extract new-format fields.
+    if is_new_format:
+
+        source = normalized_row["source"]
+        outcome = normalized_row["outcome"].lower()
+
+        if outcome not in ALLOWED_OUTCOMES:
+            return None, (
+                f"Row {row_number}: Invalid outcome "
+                f"'{outcome}'. Allowed values: "
+                f"{', '.join(sorted(ALLOWED_OUTCOMES))}."
+            )
+
+    else:
+        # Maintain compatibility with the old CSV format.
+        source = "legacy"
+
+        if event_type == "LOGIN_FAILED":
+            outcome = "failure"
+        elif event_type == "LOGIN_SUCCESS":
+            outcome = "success"
+        else:
+            outcome = ""
+
+    # User agent is optional.
+    user_agent = normalized_row.get("user_agent") or None
+
+    # Create the LogEvent.
     event = LogEvent(
-        timestamp=parsed_time,
+        timestamp=timestamp,
         source_ip=source_ip,
         username=username,
         event_type=event_type,
+        source=source,
+        outcome=outcome,
+        user_agent=user_agent,
     )
+
     return event, None
 
 
-def load_logs(file_path: str | Path) -> tuple[list[LogEvent], list[str]]:
+def load_logs(file_path: str):
     """
-    Loads and parses authentication events from a CSV log file.
-
-    Handles missing files, unreadable paths, and skips malformed rows gracefully
-    without stopping execution.
-
-    Args:
-        file_path: Path to the CSV file.
+    Load and parse security events from a CSV file.
 
     Returns:
-        A tuple containing:
-        - List of successfully parsed LogEvent objects.
-        - List of warning/error messages encountered during loading and parsing.
+        events: List of valid LogEvent objects.
+        warnings: List of errors for rejected rows.
     """
+
     path = Path(file_path)
+
     events: list[LogEvent] = []
     warnings: list[str] = []
 
+    # Check whether the file exists.
     if not path.exists():
-        warnings.append(f"Log file not found: '{file_path}'")
-        return events, warnings
+        return [], [f"File not found: {file_path}"]
 
-    if not path.is_file():
-        warnings.append(f"Target path is not a file: '{file_path}'")
-        return events, warnings
+    # Check whether the file is empty.
+    if path.stat().st_size == 0:
+        return [], ["CSV file is empty."]
 
     try:
-        with path.open(mode="r", encoding="utf-8", errors="replace") as csvfile:
-            reader = csv.DictReader(csvfile)
+        with path.open(
+            mode="r",
+            encoding="utf-8-sig",
+            newline="",
+        ) as csv_file:
 
-            # Check if header contains required columns
+            reader = csv.DictReader(csv_file)
+
+            # Check whether a header exists.
             if reader.fieldnames is None:
-                warnings.append(f"Log file '{file_path}' is empty.")
-                return events, warnings
+                return [], ["CSV file is missing a header row."]
 
-            # Normalize header names (lowercase, stripped)
-            normalized_fieldnames = [f.strip().lower() for f in reader.fieldnames if f]
-            expected = {"timestamp", "source_ip", "username", "event_type"}
-            if not expected.issubset(set(normalized_fieldnames)):
-                missing = expected - set(normalized_fieldnames)
-                warnings.append(f"Header in '{file_path}' is missing expected columns: {missing}")
-                return events, warnings
+            # Normalize header names.
+            headers = {
+                header.strip().lower()
+                for header in reader.fieldnames
+                if header is not None
+            }
 
-            # Iterate over rows
-            # row_number starts at 2 (1 is the header)
-            for row_num, row in enumerate(reader, start=2):
-                # Normalize keys in row
-                clean_row = {k.strip().lower(): v for k, v in row.items() if k is not None}
-                event, warning = parse_log_row(clean_row, row_num)
+            # Detect CSV format.
+            is_new_format = (
+                "source" in headers
+                or "outcome" in headers
+            )
+
+            required_fields = (
+                NEW_REQUIRED_FIELDS
+                if is_new_format
+                else LEGACY_REQUIRED_FIELDS
+            )
+
+            # Validate header columns.
+            missing_fields = required_fields - headers
+
+            if missing_fields:
+                return [], [
+                    "Missing required column(s): "
+                    + ", ".join(sorted(missing_fields))
+                    + "."
+                ]
+
+            # Parse each CSV row.
+            for row_number, row in enumerate(reader, start=2):
+
+                event, warning = parse_log_row(
+                    row,
+                    row_number,
+                )
+
                 if warning:
                     warnings.append(warning)
-                elif event:
+                    continue
+
+                if event is not None:
                     events.append(event)
 
-    except PermissionError:
-        warnings.append(f"Permission denied accessing file: '{file_path}'")
-    except Exception as exc:
-        warnings.append(f"Unexpected error reading '{file_path}': {exc}")
+    except UnicodeDecodeError:
+        return [], ["CSV file is not valid UTF-8 text."]
+
+    except csv.Error as error:
+        return [], [f"CSV parsing error: {error}"]
 
     return events, warnings
