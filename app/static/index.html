@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini-SIEM :: Security Operations Center Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <!-- Chart.js for SOC telemetry visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="soc-layout">
+    <!-- Top Header -->
+    <header class="soc-header">
+      <div class="header-brand">
+        <div class="shield-icon">🛡️</div>
+        <div>
+          <h1>MINI-SIEM <span class="badge badge-soc">SOC v2.0</span></h1>
+          <p class="subtitle">Security Information and Event Management Monitor</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="live-indicator">
+          <span class="pulse-dot"></span> <span id="system-status">CONNECTED</span>
+        </div>
+        <div class="server-time" id="server-time">--:--:-- UTC</div>
+        <button id="btn-run-detection" class="btn btn-primary" title="Analyze stored telemetry against all detection rules">
+          ⚡ Run Detections
+        </button>
+        <button id="btn-refresh-all" class="btn btn-secondary" title="Refresh dashboard data">
+          🔄 Refresh
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="soc-nav">
+      <button class="nav-tab active" data-tab="tab-overview">📊 Overview & Analytics</button>
+      <button class="nav-tab" data-tab="tab-incidents">🚨 Incidents <span id="badge-open-incidents" class="tab-badge">0</span></button>
+      <button class="nav-tab" data-tab="tab-alerts">⚡ Alerts Feed <span id="badge-total-alerts" class="tab-badge">0</span></button>
+      <button class="nav-tab" data-tab="tab-events">📝 Security Events</button>
+      <button class="nav-tab" data-tab="tab-upload">📤 Log Ingestion</button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="soc-main">
+      <!-- KPI Metric Cards Bar (Always Visible) -->
+      <section class="kpi-grid">
+        <div class="kpi-card" id="kpi-events">
+          <div class="kpi-title">TOTAL EVENTS</div>
+          <div class="kpi-value" id="val-total-events">0</div>
+          <div class="kpi-sub">Raw ingested telemetry</div>
+        </div>
+        <div class="kpi-card" id="kpi-alerts">
+          <div class="kpi-title">DETECTION ALERTS</div>
+          <div class="kpi-value" id="val-total-alerts">0</div>
+          <div class="kpi-sub">Rule violations triggered</div>
+        </div>
+        <div class="kpi-card" id="kpi-incidents">
+          <div class="kpi-title">TOTAL INCIDENTS</div>
+          <div class="kpi-value" id="val-total-incidents">0</div>
+          <div class="kpi-sub">Correlated threat entities</div>
+        </div>
+        <div class="kpi-card kpi-warning" id="kpi-open">
+          <div class="kpi-title">OPEN / INVESTIGATING</div>
+          <div class="kpi-value" id="val-open-incidents">0</div>
+          <div class="kpi-sub">Requires triage</div>
+        </div>
+        <div class="kpi-card kpi-danger" id="kpi-critical">
+          <div class="kpi-title">HIGH & CRITICAL</div>
+          <div class="kpi-value" id="val-critical-incidents">0</div>
+          <div class="kpi-sub">Severe active risks</div>
+        </div>
+      </section>
+
+      <!-- Global Alert / Notification Banner -->
+      <div id="soc-alert-banner" class="alert-banner hidden"></div>
+
+      <!-- TAB 1: OVERVIEW & ANALYTICS -->
+      <section id="tab-overview" class="tab-content active">
+        <div class="analytics-grid">
+          <div class="chart-panel panel-wide">
+            <h3>📈 Ingestion Activity Timeline (24hr Bucket)</h3>
+            <div class="chart-container">
+              <canvas id="chart-timeline"></canvas>
+            </div>
+          </div>
+          <div class="chart-panel">
+            <h3>🎯 Authentication Outcomes</h3>
+            <div class="chart-container">
+              <canvas id="chart-outcomes"></canvas>
+            </div>
+          </div>
+          <div class="chart-panel">
+            <h3>🚨 Alerts by Severity</h3>
+            <div class="chart-container">
+              <canvas id="chart-severity"></canvas>
+            </div>
+          </div>
+          <div class="chart-panel">
+            <h3>🏷️ Incidents by Status</h3>
+            <div class="chart-container">
+              <canvas id="chart-status"></canvas>
+            </div>
+          </div>
+          <div class="chart-panel">
+            <h3>🌐 Telemetry Sources</h3>
+            <div class="chart-container">
+              <canvas id="chart-sources"></canvas>
+            </div>
+          </div>
+          <div class="chart-panel panel-wide">
+            <h3>⚠️ Top Suspicious Source IPs</h3>
+            <div class="table-responsive">
+              <table class="soc-table" id="table-top-ips">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Source IP</th>
+                    <th>Failed / Blocked Events</th>
+                    <th>Risk Rating</th>
+                    <th>Recommended Action</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-top-ips">
+                  <tr><td colspan="5" class="text-center">No suspicious activity detected yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: INCIDENTS -->
+      <section id="tab-incidents" class="tab-content">
+        <div class="panel-header">
+          <h2>Security Incident Queue</h2>
+          <div class="filter-controls">
+            <select id="filter-incident-status">
+              <option value="">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="Investigating">Investigating</option>
+              <option value="Resolved">Resolved</option>
+              <option value="False Positive">False Positive</option>
+            </select>
+            <select id="filter-incident-severity">
+              <option value="">All Severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="soc-table" id="table-incidents">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Severity</th>
+                <th>Status</th>
+                <th>Source IP</th>
+                <th>Targeted Users</th>
+                <th>Rule(s)</th>
+                <th>MITRE ATT&CK</th>
+                <th>Time Window</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-incidents">
+              <tr><td colspan="9" class="text-center">Loading incidents...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 3: ALERTS FEED -->
+      <section id="tab-alerts" class="tab-content">
+        <div class="panel-header">
+          <h2>Detection Alerts Telemetry</h2>
+          <div class="filter-controls">
+            <select id="filter-alert-rule">
+              <option value="">All Rules</option>
+              <option value="AUTH-001">AUTH-001 (Brute-Force)</option>
+              <option value="AUTH-002">AUTH-002 (Failed then Success)</option>
+              <option value="AUTH-003">AUTH-003 (Password Spraying)</option>
+              <option value="AUTH-004">AUTH-004 (Outside Hours)</option>
+              <option value="FW-001">FW-001 (Port Scan)</option>
+              <option value="WEB-001">WEB-001 (Web Volume)</option>
+            </select>
+            <select id="filter-alert-severity">
+              <option value="">All Severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="soc-table" id="table-alerts">
+            <thead>
+              <tr>
+                <th>Alert ID</th>
+                <th>Rule ID</th>
+                <th>Severity</th>
+                <th>Source IP</th>
+                <th>Target User</th>
+                <th>Count</th>
+                <th>Window Start</th>
+                <th>MITRE Technique</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-alerts">
+              <tr><td colspan="9" class="text-center">Loading alerts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 4: SECURITY EVENTS -->
+      <section id="tab-events" class="tab-content">
+        <div class="panel-header">
+          <h2>Security Log Telemetry Explorer</h2>
+          <div class="pagination-controls">
+            <button id="btn-events-prev" class="btn btn-sm">◀ Previous</button>
+            <span id="events-page-info">Showing 0-0 of 0</span>
+            <button id="btn-events-next" class="btn btn-sm">Next ▶</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="soc-table" id="table-events">
+            <thead>
+              <tr>
+                <th>Event ID</th>
+                <th>Timestamp</th>
+                <th>Source</th>
+                <th>Source IP</th>
+                <th>Username</th>
+                <th>Event Type</th>
+                <th>Outcome</th>
+                <th>User Agent / Telemetry</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-events">
+              <tr><td colspan="8" class="text-center">Loading security events...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 5: LOG UPLOAD -->
+      <section id="tab-upload" class="tab-content">
+        <div class="upload-container">
+          <h2>📤 Ingest CSV Log Telemetry</h2>
+          <p class="upload-help">
+            Upload authentication, firewall, or web security telemetry in CSV format.
+            The engine validates formatting, computes a SHA-256 fingerprint to reject duplicate files,
+            skips malformed rows, and executes detection rules immediately.
+          </p>
+
+          <div class="drop-zone" id="drop-zone">
+            <div class="drop-icon">📁</div>
+            <p><strong>Drag & Drop your CSV file here</strong> or click to browse</p>
+            <input type="file" id="file-input" accept=".csv" class="hidden-input">
+            <button type="button" class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+              Choose File
+            </button>
+            <div id="selected-file-name" class="selected-file"></div>
+          </div>
+
+          <div class="upload-actions">
+            <button id="btn-submit-upload" class="btn btn-success" disabled>🚀 Upload & Ingest</button>
+          </div>
+
+          <!-- Upload Result Modal / Card -->
+          <div id="upload-result-card" class="result-card hidden">
+            <h3 id="upload-result-title">Ingestion Summary</h3>
+            <div id="upload-result-details" class="result-details"></div>
+            <div id="rejected-rows-box" class="rejected-box hidden">
+              <h4>⚠️ Rejected Rows (<span id="rejected-rows-count">0</span>):</h4>
+              <p>Physical row numbers skipped due to validation errors:</p>
+              <div id="rejected-row-pills" class="pills-container"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- INVESTIGATION MODAL / DRAWER -->
+    <div id="investigation-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div class="modal-title-box">
+            <h2>Incident #<span id="inv-id">--</span> Investigation Drawer</h2>
+            <div id="inv-badge-container"></div>
+          </div>
+          <button id="btn-close-modal" class="btn-close">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Incident Overview -->
+          <div class="inv-section">
+            <h3>📋 Incident Summary</h3>
+            <p id="inv-description" class="inv-desc-text"></p>
+            <div class="inv-meta-grid">
+              <div><strong>Source IP:</strong> <span id="inv-ip" class="mono">--</span></div>
+              <div><strong>Targeted Users:</strong> <span id="inv-users">--</span></div>
+              <div><strong>Observed Window:</strong> <span id="inv-window">--</span></div>
+              <div><strong>Total Events:</strong> <span id="inv-count">--</span></div>
+              <div><strong>Primary Rule(s):</strong> <span id="inv-rule">--</span></div>
+              <div>
+                <strong>Current Status:</strong>
+                <select id="modal-status-select" class="status-select">
+                  <option value="Open">Open</option>
+                  <option value="Investigating">Investigating</option>
+                  <option value="Resolved">Resolved</option>
+                  <option value="False Positive">False Positive</option>
+                </select>
+                <button id="btn-modal-save-status" class="btn btn-sm btn-primary">Save Status</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- MITRE ATT&CK Mapping Card -->
+          <div class="inv-section mitre-card">
+            <h3>🎯 MITRE ATT&CK Mapping</h3>
+            <div id="inv-mitre-container">
+              <div class="mitre-badge" id="inv-mitre-badge">T1110</div>
+              <h4 id="inv-mitre-name">Brute Force</h4>
+              <p id="inv-mitre-desc">Adversaries may use brute force techniques...</p>
+            </div>
+          </div>
+
+          <!-- Recommended Action Playbook -->
+          <div class="inv-section playbook-card">
+            <h3>🛡️ Recommended SOC Analyst Playbook</h3>
+            <div id="inv-action" class="playbook-text"></div>
+          </div>
+
+          <!-- Attack Timeline -->
+          <div class="inv-section">
+            <h3>⏱️ Telemetry Event Timeline (<span id="inv-events-count">0</span> events)</h3>
+            <div class="table-responsive timeline-table-container">
+              <table class="soc-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Source IP</th>
+                    <th>User</th>
+                    <th>Event Type</th>
+                    <th>Outcome</th>
+                    <th>User Agent</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-inv-timeline">
+                  <tr><td colspan="6" class="text-center">No telemetry records found.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="soc-footer">
+      <div>Mini-SIEM Cybersecurity Portfolio Platform &bull; FastAPI + SQLite + Chart.js</div>
+      <div class="footer-links">
+        <a href="/docs" target="_blank">Swagger API Docs</a> &bull;
+        <a href="/api/health" target="_blank">Health Status</a> &bull;
+        <a href="/api/dashboard/stats" target="_blank">JSON Metrics</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 import csv
 from dataclasses import dataclass
 from datetime import datetime
+import io
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,11 @@ class LogEvent:
     source: str = ""
     outcome: str = ""
     user_agent: Optional[str] = None
+    dest_ip: Optional[str] = None
+    dest_port: Optional[int] = None
+    protocol: Optional[str] = None
+    request_path: Optional[str] = None
+    status_code: Optional[int] = None
 
 
 # Required columns for the old CSV format.
@@ -186,6 +192,26 @@ def parse_log_row(
     # User agent is optional.
     user_agent = normalized_row.get("user_agent") or None
 
+    # Optional network and web fields (for FW-001 / WEB-001)
+    dest_ip = normalized_row.get("dest_ip") or None
+    dest_port_val = normalized_row.get("dest_port")
+    dest_port: Optional[int] = None
+    if dest_port_val:
+        try:
+            dest_port = int(str(dest_port_val).strip())
+        except ValueError:
+            pass
+
+    protocol = normalized_row.get("protocol") or None
+    request_path = normalized_row.get("request_path") or None
+    status_code_val = normalized_row.get("status_code")
+    status_code: Optional[int] = None
+    if status_code_val:
+        try:
+            status_code = int(str(status_code_val).strip())
+        except ValueError:
+            pass
+
     # Create the LogEvent.
     event = LogEvent(
         timestamp=timestamp,
@@ -195,9 +221,75 @@ def parse_log_row(
         source=source,
         outcome=outcome,
         user_agent=user_agent,
+        dest_ip=dest_ip,
+        dest_port=dest_port,
+        protocol=protocol,
+        request_path=request_path,
+        status_code=status_code,
     )
 
     return event, None
+
+
+def parse_csv_content(
+    content: str,
+) -> tuple[list[LogEvent], list[str], list[int], int]:
+    """
+    Parse CSV text content into LogEvents, tracking rejected rows.
+
+    Returns:
+        (valid_events, warnings, rejected_row_numbers, total_rows)
+    """
+    stream = io.StringIO(content)
+    reader = csv.DictReader(stream)
+
+    if reader.fieldnames is None:
+        return [], ["CSV file is missing a header row."], [], 0
+
+    headers = {
+        header.strip().lower()
+        for header in reader.fieldnames
+        if header is not None
+    }
+
+    is_new_format = (
+        "source" in headers
+        or "outcome" in headers
+    )
+
+    required_fields = (
+        NEW_REQUIRED_FIELDS
+        if is_new_format
+        else LEGACY_REQUIRED_FIELDS
+    )
+
+    missing_fields = required_fields - headers
+    if missing_fields:
+        return (
+            [],
+            [
+                "Missing required CSV column(s): "
+                + ", ".join(sorted(missing_fields))
+            ],
+            [],
+            0,
+        )
+
+    events: list[LogEvent] = []
+    warnings: list[str] = []
+    rejected_row_numbers: list[int] = []
+    total_rows = 0
+
+    for row_number, row in enumerate(reader, start=2):
+        total_rows += 1
+        event, warning = parse_log_row(row, row_number)
+        if warning or event is None:
+            warnings.append(warning or f"Row {row_number}: Invalid row.")
+            rejected_row_numbers.append(row_number)
+        else:
+            events.append(event)
+
+    return events, warnings, rejected_row_numbers, total_rows
 
 
 def load_logs(file_path: str):
@@ -210,9 +302,6 @@ def load_logs(file_path: str):
     """
 
     path = Path(file_path)
-
-    events: list[LogEvent] = []
-    warnings: list[str] = []
 
     # Check whether the file exists.
     if not path.exists():
@@ -228,61 +317,12 @@ def load_logs(file_path: str):
             encoding="utf-8-sig",
             newline="",
         ) as csv_file:
-
-            reader = csv.DictReader(csv_file)
-
-            # Check whether a header exists.
-            if reader.fieldnames is None:
-                return [], ["CSV file is missing a header row."]
-
-            # Normalize header names.
-            headers = {
-                header.strip().lower()
-                for header in reader.fieldnames
-                if header is not None
-            }
-
-            # Detect CSV format.
-            is_new_format = (
-                "source" in headers
-                or "outcome" in headers
-            )
-
-            required_fields = (
-                NEW_REQUIRED_FIELDS
-                if is_new_format
-                else LEGACY_REQUIRED_FIELDS
-            )
-
-            # Validate header columns.
-            missing_fields = required_fields - headers
-
-            if missing_fields:
-                return [], [
-                    "Missing required column(s): "
-                    + ", ".join(sorted(missing_fields))
-                    + "."
-                ]
-
-            # Parse each CSV row.
-            for row_number, row in enumerate(reader, start=2):
-
-                event, warning = parse_log_row(
-                    row,
-                    row_number,
-                )
-
-                if warning:
-                    warnings.append(warning)
-                    continue
-
-                if event is not None:
-                    events.append(event)
+            content = csv_file.read()
+            events, warnings, _, _ = parse_csv_content(content)
+            return events, warnings
 
     except UnicodeDecodeError:
         return [], ["CSV file is not valid UTF-8 text."]
 
     except csv.Error as error:
         return [], [f"CSV parsing error: {error}"]
-
-    return events, warnings

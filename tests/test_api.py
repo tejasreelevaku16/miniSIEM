@@ -196,6 +196,67 @@ class TestMiniSIEMApi(unittest.TestCase):
         self.assertEqual(len(p3["events"]), 1)
         self.assertEqual(p3["events"][0]["username"], "user4")
 
+    def test_upload_file_hash_duplicate_response(self):
+        """Verify identical file upload returns standard duplicate response."""
+        csv_content = (
+            "timestamp,source,username,source_ip,event_type,outcome,user_agent\n"
+            "2026-10-20T10:00:01,windows,tejasree,192.168.1.10,login,success,Chrome\n"
+        )
+        files = {"file": ("auth.csv", csv_content, "text/csv")}
+        res1 = self.client.post("/api/logs/upload", files=files)
+        self.assertEqual(res1.status_code, 200)
+        data1 = res1.json()
+        self.assertEqual(data1["status"], "success")
+        raw_id = data1["raw_log_id"]
+
+        # Second upload with exact same content
+        res2 = self.client.post("/api/logs/upload", files={"file": ("auth_copy.csv", csv_content, "text/csv")})
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.json()
+        self.assertEqual(data2["status"], "duplicate")
+        self.assertEqual(data2["message"], "This file has already been uploaded.")
+        self.assertEqual(data2["existing_raw_log_id"], raw_id)
+
+    def test_upload_official_csv_and_rejected_row_numbers(self):
+        """Verify official CSV format parsing and rejected row numbers starting at 2."""
+        csv_content = (
+            "timestamp,source,username,source_ip,event_type,outcome,user_agent\n"
+            "2026-10-20T10:00:01,windows,alice,192.168.1.10,login,success,Chrome\n"
+            "2026-10-20T10:01:00,windows,bob,192.168.1.20,login,invalid_outcome,Firefox\n"
+            "2026-10-20T10:02:00,windows,charlie,192.168.1.30,login,failure,Edge\n"
+        )
+        files = {"file": ("mixed.csv", csv_content, "text/csv")}
+        res = self.client.post("/api/logs/upload", files=files)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["message"], "Log file processed")
+        self.assertEqual(data["total_rows"], 3)
+        self.assertEqual(data["processed_events"], 2)
+        self.assertEqual(data["rejected_rows"], 1)
+        self.assertEqual(data["rejected_row_numbers"], [3])
+        self.assertIsInstance(data["raw_log_id"], int)
+
+    def test_get_single_log_by_id(self):
+        """Verify GET /api/logs/{event_id} returns single event or 404."""
+        csv_content = (
+            "timestamp,source,username,source_ip,event_type,outcome,user_agent\n"
+            "2026-10-20T10:00:01,windows,alice,192.168.1.10,login,success,Chrome\n"
+        )
+        self.client.post("/api/logs/upload", files={"file": ("test.csv", csv_content, "text/csv")})
+
+        # Retrieve ID 1
+        res = self.client.get("/api/logs/1")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["id"], 1)
+        self.assertEqual(data["username"], "alice")
+        self.assertEqual(data["outcome"], "success")
+
+        # Retrieve non-existent ID 999
+        res_404 = self.client.get("/api/logs/999")
+        self.assertEqual(res_404.status_code, 404)
+        self.assertIn("not found", res_404.json()["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

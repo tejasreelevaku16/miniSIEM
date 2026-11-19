@@ -228,6 +228,94 @@ class TestMiniSIEMDatabase(unittest.TestCase):
         self.assertEqual(duplicates, 0)
         self.assertEqual(count_incidents(self.db_path), 0)
 
+    def test_schema_migration_preserves_existing_data(self):
+        """Verify init_db safely migrates older schema databases without deleting rows."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        # Create legacy table structure without newer columns
+        cursor.execute("""
+            CREATE TABLE incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_ip TEXT NOT NULL,
+                failure_count INTEGER NOT NULL,
+                window_start TEXT NOT NULL,
+                window_end TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                description TEXT NOT NULL,
+                targeted_usernames TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        cursor.execute("""
+            INSERT INTO incidents (
+                source_ip, failure_count, window_start, window_end,
+                severity, description, targeted_usernames, created_at
+            ) VALUES ('192.168.1.1', 3, '2026-10-20 10:00:00', '2026-10-20 10:05:00',
+                      'MEDIUM', 'Old incident', 'alice', '2026-10-20 10:06:00');
+        """)
+        conn.commit()
+        conn.close()
+
+        # Run migration via init_db
+        init_db(self.db_path)
+
+        # Confirm legacy row is intact and has new default column values
+        incidents = get_all_incidents(self.db_path)
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0]["source_ip"], "192.168.1.1")
+        self.assertEqual(incidents[0]["status"], "Open")
+
+    def test_file_hash_uniqueness_constraint(self):
+        """Verify database enforces uniqueness on file_hash."""
+        from app.database import save_uploaded_log
+        save_uploaded_log(
+            filename="log1.csv",
+            total_rows=10,
+            valid_events=10,
+            rejected_rows=0,
+            db_path=self.db_path,
+            file_hash="hash_abc_123",
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            save_uploaded_log(
+                filename="log2.csv",
+                total_rows=10,
+                valid_events=10,
+                rejected_rows=0,
+                db_path=self.db_path,
+                file_hash="hash_abc_123",
+            )
+
+    def test_incident_status_update_and_retrieval(self):
+        """Verify incident status updates work and invalid statuses are rejected."""
+        from app.database import get_incident_by_id, update_incident_status
+        alert = Alert(
+            source_ip="10.0.0.99",
+            failure_count=5,
+            window_start=datetime(2026, 10, 20, 10, 0, 0),
+            window_end=datetime(2026, 10, 20, 10, 5, 0),
+            severity="HIGH",
+            description="Brute force test",
+            targeted_usernames=["admin"],
+        )
+        save_alerts([alert], self.db_path)
+
+        incident = get_incident_by_id(1, self.db_path)
+        self.assertIsNotNone(incident)
+        self.assertEqual(incident["status"], "Open")
+
+        # Update to Investigating
+        updated = update_incident_status(1, "Investigating", self.db_path)
+        self.assertEqual(updated["status"], "Investigating")
+
+        # Update to Resolved
+        updated = update_incident_status(1, "Resolved", self.db_path)
+        self.assertEqual(updated["status"], "Resolved")
+
+        # Invalid status should raise ValueError
+        with self.assertRaises(ValueError):
+            update_incident_status(1, "InvalidStatus", self.db_path)
+
 
 if __name__ == "__main__":
     unittest.main()

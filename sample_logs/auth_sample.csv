@@ -1,0 +1,17 @@
+timestamp,source,username,source_ip,event_type,outcome,user_agent
+2026-10-20T08:30:00,windows,charlie,10.0.0.15,LOGIN,success,Chrome
+2026-10-20T09:00:10,windows,admin,45.33.32.156,LOGIN,failure,curl/7.88.1
+2026-10-20T09:01:05,windows,admin,45.33.32.156,LOGIN,failure,curl/7.88.1
+2026-10-20T09:02:15,windows,admin,45.33.32.156,LOGIN,failure,curl/7.88.1
+2026-10-20T09:03:20,windows,admin,45.33.32.156,LOGIN,failure,curl/7.88.1
+2026-10-20T09:04:10,windows,admin,45.33.32.156,LOGIN,failure,curl/7.88.1
+2026-10-20T09:05:00,windows,admin,45.33.32.156,LOGIN,failure,curl/7.88.1
+2026-10-20T09:10:00,windows,developer,192.168.1.50,LOGIN,failure,Firefox/120.0
+2026-10-20T09:11:15,windows,developer,192.168.1.50,LOGIN,failure,Firefox/120.0
+2026-10-20T09:12:00,windows,developer,192.168.1.50,LOGIN,success,Firefox/120.0
+2026-10-20T09:20:00,linux,root,185.220.101.5,LOGIN,failure,Hydra/9.5
+2026-10-20T09:20:30,linux,administrator,185.220.101.5,LOGIN,failure,Hydra/9.5
+2026-10-20T09:21:00,linux,backup,185.220.101.5,LOGIN,failure,Hydra/9.5
+2026-10-20T09:21:30,linux,guest,185.220.101.5,LOGIN,failure,Hydra/9.5
+2026-10-20T09:30:00,windows,alice,10.0.0.22,LOGIN,success,Edge/119.0
+2026-10-20T02:15:00,windows,sysadmin,10.0.0.99,LOGIN,success,PowerShell

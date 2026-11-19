@@ -1,8 +1,83 @@
 # Mini-SIEM (Security Information and Event Management)
 
-Mini-SIEM is a lightweight, educational Security Information and Event Management prototype built with Python and FastAPI. It simulates how modern Security Operations Center (SOC) platforms ingest authentication telemetry via REST APIs or files, normalize event logs, correlate suspicious activities (such as brute-force attacks) using rolling time windows, and persist both raw telemetry and correlated security incidents into a local relational database for SOC auditing.
+Mini-SIEM is an educational, production-grade Security Information and Event Management prototype built with **Python**, **FastAPI**, **SQLite**, and **Chart.js**.
 
-This project is tailored as a cybersecurity portfolio demonstration illustrating security log parsing, rule-based detection engineering, REST API log ingestion, parameterized SQL defense, and defensive scripting.
+It simulates how modern Security Operations Center (SOC) platforms ingest multi-source telemetry, normalize event logs, enforce cryptographic duplicate rejection, apply rule-based detection engineering with **MITRE ATT&CK&reg;** mapping, correlate alerts into unified security incidents, and present live analytics to SOC analysts.
+
+Designed as an end-to-end cybersecurity portfolio project for security analyst and engineering interviews.
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    subgraph Ingestion["Log Ingestion & Parsing"]
+        A[CSV Telemetry Upload] --> B[SHA-256 Hasher]
+        B -->|Unique Hash| C[CSV Normalizer & Validator]
+        B -->|Duplicate Hash| D[Duplicate Rejection Modal]
+        C -->|Valid Events| E[(SQLite Database)]
+        C -->|Malformed Rows| F[Rejected Row Tracker]
+    end
+
+    subgraph Detection["Rule-Based Detection Engine"]
+        E --> G[AUTH-001: Brute Force T1110]
+        E --> H[AUTH-002: Failed then Success T1078]
+        E --> I[AUTH-003: Password Spray T1110.003]
+        E --> J[AUTH-004: Off-Hours Login T1078]
+        E --> K[FW-001: Port Scan T1046]
+        E --> L[WEB-001: Web Volume T1499]
+    end
+
+    subgraph Correlation["Correlation & Storage"]
+        G & H & I & J & K & L --> M[Alert Generation]
+        M --> N[Incident Correlator]
+        N -->|Escalation Engine| O[Correlated Incidents]
+        O --> E
+    end
+
+    subgraph SOC["SOC Analyst Interface"]
+        E --> P[REST API Layer]
+        P --> Q[FastAPI Swagger Docs /docs]
+        P --> R[Interactive SOC Dashboard /]
+        R --> S[Chart.js Telemetry Analytics]
+        R --> T[Investigation Drawer & Playbooks]
+    end
+```
+
+---
+
+## Core Capabilities
+
+### 1. Cryptographic Ingestion & Defensive Parsing
+- **SHA-256 File Hashing:** Every uploaded log is fingerprinted. Identical files are instantly detected and rejected (`HTTP 200 {"status": "duplicate"}`), preventing audit log pollution.
+- **Physical Row Numbering:** Row-level validation skips corrupted timestamps or invalid outcomes while recording exact physical row numbers (e.g. `[Row #4, Row #9]`) for analyst review.
+- **Dual Format Support:** Accepts the official 7-column schema (`timestamp,source,username,source_ip,event_type,outcome,user_agent`) and optional firewall/web telemetry (`dest_ip,dest_port,protocol,request_path,status_code`), with backwards compatibility for legacy 4-column auth logs.
+
+### 2. Multi-Rule Detection Engine & MITRE ATT&CK Mapping
+- **AUTH-001 (Brute-Force Login):** Detects $\ge 5$ failed logins from the same source IP within a 10-minute sliding window. &rarr; **T1110 (Brute Force)**.
+- **AUTH-002 (Failed Login Followed by Success):** Identifies suspicious sequences where failed login attempts are followed by a successful login for the same user and IP, indicating successful credential compromise. &rarr; **T1078 (Valid Accounts)**.
+- **AUTH-003 (Repeated Suspicious Login Activity):** Detects password spraying attempts targeting $\ge 3$ distinct user accounts from a single IP. &rarr; **T1110.003 (Password Spraying)**.
+- **AUTH-004 (Login Outside Business Hours):** Flags successful authentications occurring outside configured operating hours (default 08:00&ndash;18:00) or weekends. &rarr; **T1078 (Valid Accounts)**.
+- **FW-001 (Port Scan Reconnaissance):** Detects connection attempts across $\ge 5$ distinct destination ports from a single IP within 5 minutes. &rarr; **T1046 (Network Service Discovery)**.
+- **WEB-001 (High Request Volume Anomaly):** Flags HTTP request floods ($\ge 30$ requests/minute) when web server telemetry is present. &rarr; **T1499 (Endpoint Denial of Service)**.
+
+### 3. Incident Correlation & Investigation Playbooks
+- **Entity Correlation:** Merges multiple alerts sharing source IPs, usernames, and temporal proximity into single incidents.
+- **Multi-Stage Attack Escalation:** If an incident exhibits both `AUTH-001` (Brute Force) and `AUTH-002` (Successful Login), the incident automatically escalates to **CRITICAL** severity.
+- **Incident Lifecycle Management:** Supports live SOC analyst triage statuses: `Open`, `Investigating`, `Resolved`, and `False Positive`.
+- **Investigation Drawer:** Provides an interactive drill-down showing attack timelines, affected users, MITRE technique explanations, and actionable remediation steps.
+
+### 4. Interactive SOC Analyst Dashboard
+- Single-page dark-mode web interface served directly by FastAPI at `http://127.0.0.1:8000/`.
+- Real-time **Chart.js** visualizations:
+  - 24-hour ingestion activity timeline (line chart)
+  - Successful vs failed vs blocked login ratios (doughnut chart)
+  - Alert breakdown by severity (bar chart)
+  - Incident queue by investigation status (bar chart)
+  - Telemetry source breakdown (bar chart)
+  - Top suspicious IP addresses ranked by failure count
+- Drag-and-drop CSV log file uploader with live upload summary, duplicate banners, and rejected row pills.
 
 ---
 
@@ -11,240 +86,170 @@ This project is tailored as a cybersecurity portfolio demonstration illustrating
 ```
 MiniSIEM/
 │
-├── sample_logs.csv        # Simulated authentication dataset with realistic events
-├── detector.py            # Log ingestion, normalization, and detection engine
-├── database.py            # SQLite storage module with deduplication and parameterized queries
-├── app.py                 # FastAPI REST API for log uploading, health, and event retrieval
-├── main.py                # Command-line entry point, alert presentation, and storage orchestrator
-├── test_detector.py       # Unit tests for log parsing and brute-force detection
-├── test_database.py       # Unit tests for database schemas, persistence, and deduplication
-├── test_api.py            # Unit tests for FastAPI endpoints, uploads, and pagination
-├── minisiem.db            # Local SQLite database storing events, upload metadata, and incidents
-├── PROJECT_JOURNAL.md     # Engineering log tracking implemented & verified milestones
-└── README.md              # Project documentation and setup guide
+├── app/
+│   ├── main.py                     # FastAPI application entrypoint & static mount
+│   ├── database.py                 # SQLite storage, migrations, and parameterized queries
+│   ├── schemas.py                  # Pydantic schemas for request/response validation
+│   │
+│   ├── routers/                    # Modular API route controllers
+│   │   ├── logs.py                 # POST /api/logs/upload, GET /api/logs, GET /api/logs/{id}
+│   │   ├── alerts.py               # GET /api/alerts, POST /api/alerts/run-detection
+│   │   ├── incidents.py            # GET /api/incidents, GET /api/incidents/{id}, PATCH status
+│   │   └── dashboard.py            # GET /api/dashboard/stats
+│   │
+│   ├── services/                   # Core business logic
+│   │   ├── csv_parser.py           # Defensive CSV parser, row numbering & ISO 8601 parsing
+│   │   ├── detection_engine.py     # 6 Security detection rules & sliding time windows
+│   │   ├── incident_correlator.py  # Alert grouping, multi-stage escalation & deduplication
+│   │   └── mitre_mapper.py         # MITRE ATT&CK technique definitions & SOC playbooks
+│   │
+│   └── static/                     # Frontend SOC dashboard
+│       ├── index.html              # Modern, responsive single-page dashboard layout
+│       ├── styles.css              # Cyber dark-theme SOC styling
+│       └── app.js                  # Frontend controller & Chart.js rendering
+│
+├── sample_logs/                    # Realistic test datasets
+│   ├── sample_logs.csv             # Baseline authentication logs
+│   ├── auth_sample.csv             # Brute-force, spray, off-hours, and success-after-fail
+│   ├── firewall_sample.csv         # Multi-port scanning network telemetry
+│   └── web_sample.csv              # High-volume web server HTTP access flood
+│
+├── tests/                          # 50 Automated unit tests
+│   ├── test_api.py                 # API uploads, hashing, duplicate prevention & pagination
+│   ├── test_database.py            # SQLite schema migrations, constraints & persistence
+│   ├── test_detector.py            # Baseline brute force & sliding window logic
+│   ├── test_rules.py               # Dedicated tests for all 6 detection rules
+│   ├── test_correlation.py         # Incident correlation & multi-stage escalation
+│   ├── test_incident_api.py        # Incident CRUD, PATCH status, and dashboard stats
+│   └── test_mitre.py               # MITRE ATT&CK mapping lookups
+│
+├── main.py                         # Command-line SOC analysis runner
+├── check_db.py                     # Database inspection utility
+├── minisiem.db                     # Local SQLite database (git-ignored)
+├── requirements.txt                # Pinned production dependencies
+├── pytest.ini                      # Pytest discovery configuration
+├── PROJECT_JOURNAL.md              # Milestone tracking & engineering journal
+└── README.md                       # Complete project documentation
 ```
 
-### Module Breakdown
-
-| File | Purpose |
-| :--- | :--- |
-| `sample_logs.csv` | Contains simulated audit logs (timestamps, IPs, usernames, status). |
-| `detector.py` | Contains `LogEvent` and `Alert` models, safe CSV loading, validation, and rolling 5-minute window correlation. |
-| `database.py` | Manages SQLite connection lifecycle, schema migrations, parameterized queries, and incident/event deduplication. |
-| `app.py` | FastAPI application exposing `/api/health`, `/api/logs/upload`, and `/api/logs`. |
-| `main.py` | CLI tool coordinating log ingestion, triggering detection, and printing terminal alert cards. |
-| `test_detector.py` | Automated tests verifying brute-force detection, normal traffic filtering, time-window logic, and malformed data handling. |
-| `test_database.py` | Automated tests verifying table creation, auto-increment IDs, chronological queries, duplicate skipping, and SQL injection defense. |
-| `test_api.py` | Automated tests verifying REST API health checks, file validation, duplicate event skipping, and log pagination. |
-
 ---
 
-## Prerequisites & Setup
+## Installation & Setup
 
-### Requirements
-- **Python 3.10+** (tested on Python 3.14)
-- **Dependencies**: `fastapi`, `uvicorn[standard]`, `python-multipart`, and `httpx`.
-- **PyCharm** (Community or Professional Edition)
+### Prerequisites
+- **Python 3.10+** (tested on Python 3.14.4 on Windows)
+- **PyCharm** or any preferred IDE
 
-### Setup Instructions in PyCharm
-
-1. Open the project directory (`MiniSIEM`) in PyCharm.
-2. Ensure your Python Interpreter is configured to the project's virtual environment (`.venv`).
-3. Open PyCharm's built-in **Terminal** (`Alt+F12` or View &rarr; Tool Windows &rarr; Terminal).
-4. Install required packages (if not already installed):
-   ```powershell
-   pip install "fastapi>=0.100.0" "uvicorn[standard]>=0.20.0" "python-multipart>=0.0.6" "httpx>=0.24.0"
-   ```
-
----
-
-## How to Run the REST API Backend
-
-Start the FastAPI application with Uvicorn:
+### 1. Clone & Set Up Virtual Environment
 
 ```powershell
-uvicorn app:app --reload
+cd C:\Users\tejas\PycharmProjects\MiniSIEM
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
-The server starts locally at `http://127.0.0.1:8000`.
-
-### Interactive Swagger UI (`/docs`)
-FastAPI provides an automatic, interactive API documentation interface. Open your browser and navigate to:
-```
-http://127.0.0.1:8000/docs
-```
-From `/docs`, you can:
-1. **Health Check (`GET /api/health`)**: Click "Try it out" &rarr; "Execute" to inspect service uptime.
-2. **Upload CSV Logs (`POST /api/logs/upload`)**: Click "Try it out", browse and select `sample_logs.csv`, and click "Execute" to upload and ingest logs into SQLite.
-3. **Query Events (`GET /api/logs`)**: Retrieve stored events with custom `limit` and `offset` pagination.
-
----
-
-## REST API Endpoints
-
-### 1. `GET /api/health`
-Checks API status.
-- **Response `200 OK`**:
-  ```json
-  {
-    "status": "ok",
-    "service": "Mini-SIEM Log Ingestion API",
-    "timestamp": "2026-10-20 20:50:00"
-  }
-  ```
-
-### 2. `POST /api/logs/upload`
-Uploads a CSV file containing authentication telemetry.
-- **Payload**: `multipart/form-data` with key `file`.
-- **Validation**:
-  - Must have `.csv` file extension.
-  - Header must contain: `timestamp`, `source_ip`, `username`, `event_type`.
-  - Malformed or incomplete rows are skipped while valid events are saved.
-- **Response `200 OK`**:
-  ```json
-  {
-    "status": "success",
-    "filename": "sample_logs.csv",
-    "upload_id": 1,
-    "summary": {
-      "total_rows": 17,
-      "valid_events": 17,
-      "rejected_rows": 0,
-      "stored_events": 17,
-      "duplicate_events_skipped": 0
-    }
-  }
-  ```
-- **Error Response `400 Bad Request`**: Returned on non-CSV uploads, empty files, or missing headers.
-
-### 3. `GET /api/logs`
-Retrieves stored security events in chronological order.
-- **Query Parameters**:
-  - `limit` (default: 100, min: 1, max: 1000)
-  - `offset` (default: 0, min: 0)
-- **Response `200 OK`**:
-  ```json
-  {
-    "total": 17,
-    "limit": 100,
-    "offset": 0,
-    "events": [
-      {
-        "id": 1,
-        "upload_id": 1,
-        "timestamp": "2026-10-20 08:30:00",
-        "source_ip": "10.0.0.15",
-        "username": "charlie",
-        "event_type": "LOGIN_SUCCESS",
-        "created_at": "2026-10-20 20:50:00"
-      }
-    ]
-  }
-  ```
-
----
-
-## SQLite Database Schemas
-
-Mini-SIEM maintains three relational tables in `minisiem.db`:
-
-### 1. `uploaded_logs` Table (Metadata)
-Stores batch upload records and parsing metrics.
-```sql
-CREATE TABLE IF NOT EXISTS uploaded_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    filename TEXT NOT NULL,
-    upload_timestamp TEXT NOT NULL,
-    total_rows INTEGER NOT NULL,
-    valid_events INTEGER NOT NULL,
-    rejected_rows INTEGER NOT NULL
-);
-```
-
-### 2. `security_events` Table (Parsed Telemetry)
-Stores individual normalized authentication events.
-```sql
-CREATE TABLE IF NOT EXISTS security_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    upload_id INTEGER,
-    timestamp TEXT NOT NULL,
-    source_ip TEXT NOT NULL,
-    username TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(upload_id) REFERENCES uploaded_logs(id) ON DELETE SET NULL,
-    CONSTRAINT uq_security_event UNIQUE (timestamp, source_ip, username, event_type)
-);
-```
-
-### 3. `incidents` Table (Correlated Alerts)
-Stores security incidents detected by correlation rules.
-```sql
-CREATE TABLE IF NOT EXISTS incidents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_ip TEXT NOT NULL,
-    failure_count INTEGER NOT NULL,
-    window_start TEXT NOT NULL,
-    window_end TEXT NOT NULL,
-    severity TEXT NOT NULL,
-    description TEXT NOT NULL,
-    targeted_usernames TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    CONSTRAINT uq_incident UNIQUE (source_ip, window_start, window_end)
-);
-```
-
----
-
-## How to Run the Automated Tests
-
-Run test discovery across all 24 automated unit tests:
+### 2. Install Dependencies
 
 ```powershell
-python -m unittest discover -v
+pip install -r requirements.txt
 ```
-
-Or run individual test modules:
-
-```powershell
-python -m unittest -v test_api.py
-python -m unittest -v test_database.py
-python -m unittest -v test_detector.py
-```
-
-### What the Test Suite Covers (24 Tests Total)
-
-- **API Tests (`test_api.py` - 10 tests)**:
-  - Health check endpoint verification.
-  - Successful CSV upload and parsing.
-  - Duplicate event skipping on repeated uploads.
-  - Rejection of missing required headers (e.g. missing `username`).
-  - Handling of mixed files (valid rows stored, malformed rows rejected).
-  - Rejection of non-CSV extensions and empty payloads.
-  - Retrieval of events from empty and populated databases.
-  - Chronological ordering and pagination (`limit`, `offset`).
-- **Database Tests (`test_database.py` - 6 tests)**:
-  - Table initialization and schema constraints.
-  - Alert saving and unique ID assignment.
-  - Chronological queries and count metrics.
-  - Incident deduplication.
-  - Parameterized query SQL injection defense.
-  - Empty list handling.
-- **Detector Tests (`test_detector.py` - 8 tests)**:
-  - Brute-force threshold detection within rolling windows.
-  - Normal traffic filtering.
-  - Spread-out failures outside the 5-minute window.
-  - Severity level calculation (`MEDIUM` vs `HIGH`).
-  - Missing file and malformed row error handling.
-  - End-to-end sample log verification.
 
 ---
 
-## Future Roadmap
+## How to Run
 
-- [x] **Milestone 1**: CSV log ingestion, validation, rolling 5-minute brute-force detection.
-- [x] **Milestone 2**: SQLite incident persistence, parameterized queries, and deduplication.
-- [x] **Milestone 3 (Week 1)**: FastAPI REST backend for log ingestion, upload validation, and event retrieval.
-- [ ] **Milestone 4 (Week 2)**: Interactive Web Dashboard for SOC analysts (incident timeline charts, threat maps, status tagging).
-- [ ] **Milestone 5**: Advanced detection rules (password spraying detection, impossible travel, anomalous off-hours logins).
-- [ ] **Milestone 6**: Real-time live log ingestion daemon (listening on UDP/TCP syslog socket).
+### Option A: Run the Web Dashboard & REST API Backend
+
+Start the Uvicorn server:
+
+```powershell
+uvicorn app.main:app --reload --port 8000
+```
+
+1. Open **Interactive SOC Dashboard**: Navigate to [`http://127.0.0.1:8000/`](http://127.0.0.1:8000/) in your web browser.
+2. Open **Interactive Swagger API Documentation**: Navigate to [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs).
+
+### Option B: Run the Command-Line Analyst Runner
+
+Analyze sample log files directly in the terminal:
+
+```powershell
+# Analyze baseline logs
+python main.py sample_logs/sample_logs.csv
+
+# Analyze advanced multi-rule authentication logs
+python main.py sample_logs/auth_sample.csv
+
+# Analyze firewall port scan logs
+python main.py sample_logs/firewall_sample.csv
+
+# Analyze web server access logs
+python main.py sample_logs/web_sample.csv
+```
+
+---
+
+## REST API Reference
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/` | Serves the interactive SOC analyst web dashboard. |
+| `GET` | `/api/health` | Health check endpoint returning service status and server time. |
+| `POST` | `/api/logs/upload` | Uploads a CSV log file with SHA-256 duplicate detection and automatic rule detection. |
+| `GET` | `/api/logs` | Retrieves stored security events with `limit` and `offset` pagination. |
+| `GET` | `/api/logs/{event_id}` | Retrieves a single security event by its primary key ID. |
+| `GET` | `/api/alerts` | Lists detection alerts with optional `rule_id` and `severity` filters. |
+| `POST` | `/api/alerts/run-detection` | Executes all detection rules across stored events and correlates incidents. |
+| `GET` | `/api/incidents` | Lists correlated incidents with `status` and `severity` filters. |
+| `GET` | `/api/incidents/{incident_id}` | Returns comprehensive incident details, related alerts, event timeline, and MITRE playbooks. |
+| `PATCH` | `/api/incidents/{incident_id}` | Updates incident lifecycle status (`Open`, `Investigating`, `Resolved`, `False Positive`). |
+| `GET` | `/api/dashboard/stats` | Returns real-time aggregate metrics for dashboard KPI cards and Chart.js charts. |
+
+---
+
+## Running Automated Tests
+
+All tests run in completely isolated temporary SQLite databases (`tempfile.TemporaryDirectory`), guaranteeing that `minisiem.db` is never corrupted during test runs.
+
+Run the entire test suite:
+
+```powershell
+pytest -v
+```
+
+### Verified Test Results
+```
+============================== test session starts ==============================
+collected 50 items
+
+tests/test_api.py::TestMiniSIEMApi .............                          [ 26%]
+tests/test_correlation.py::TestIncidentCorrelator ...                     [ 32%]
+tests/test_database.py::TestMiniSIEMDatabase .........                    [ 50%]
+tests/test_detector.py::TestMiniSIEMDetector ........                     [ 66%]
+tests/test_incident_api.py::TestIncidentAndDashboardApi ....              [ 74%]
+tests/test_mitre.py::TestMitreMapper ....                                 [ 82%]
+tests/test_rules.py::TestDetectionRules .........                         [100%]
+
+======================== 50 passed, 1 warning in 8.55s ========================
+```
+
+---
+
+## Sample Datasets
+
+Four ready-to-use CSV datasets are provided in `sample_logs/`:
+
+| Dataset | Telemetry Type | Scenarios Simulated |
+| :--- | :--- | :--- |
+| `sample_logs.csv` | Authentication | Baseline failed and successful logins, normal traffic, brute-force bursts. |
+| `auth_sample.csv` | Authentication | Rapid brute-force (`AUTH-001`), password guessing success (`AUTH-002`), password spray (`AUTH-003`), off-hours login (`AUTH-004`). |
+| `firewall_sample.csv` | Network / Firewall | Normal allowed connections, port scan probing 8 distinct destination ports (`FW-001`). |
+| `web_sample.csv` | Web Server HTTP | Standard web requests, rapid 35-request flood attack (`WEB-001`). |
+
+---
+
+## Scope & Limitations
+
+- **Educational Simulation:** Mini-SIEM is designed as a demonstration project using simulated CSV log telemetry. It does not monitor real-world production employee machines or live enterprise endpoints.
+- **Log Source Scope:** Optimized for simulated authentication, network firewall, and web server logs.
+- **Database Engine:** Uses SQLite with WAL-compatible transactions and parameterized queries, ideal for standalone portfolio demonstrations.

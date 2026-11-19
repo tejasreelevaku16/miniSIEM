@@ -1,0 +1,11 @@
+timestamp,source,username,source_ip,event_type,outcome,user_agent,dest_ip,dest_port,protocol
+2026-10-20T10:00:00,firewall,system,10.0.0.15,NETWORK_CONNECT,success,,10.0.0.1,443,TCP
+2026-10-20T10:00:05,firewall,system,10.0.0.15,NETWORK_CONNECT,success,,10.0.0.1,80,TCP
+2026-10-20T10:01:00,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,21,TCP
+2026-10-20T10:01:05,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,22,TCP
+2026-10-20T10:01:10,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,23,TCP
+2026-10-20T10:01:15,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,25,TCP
+2026-10-20T10:01:20,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,80,TCP
+2026-10-20T10:01:25,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,443,TCP
+2026-10-20T10:01:30,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,3389,TCP
+2026-10-20T10:01:35,firewall,anonymous,198.51.100.44,PORT_PROBE,blocked,,192.168.1.10,8080,TCP

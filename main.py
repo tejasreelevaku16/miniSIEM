@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 from app.services.csv_parser import load_logs
-from app.services.detection_engine import Alert, detect_brute_force
+from app.services.detection_engine import Alert, detect_brute_force, run_all_detection_rules
 from app.database import count_incidents, init_db, save_alerts, DEFAULT_DB_PATH
 
 def format_timestamp(dt: datetime) -> str:
@@ -23,7 +23,7 @@ def print_banner() -> None:
     """Displays the Mini-SIEM startup banner."""
     print("=" * 64)
     print("            MINI-SIEM :: SECURITY EVENT MONITOR")
-    print("           Authentication Brute-Force Detector")
+    print("      Multi-Rule Detection Engine & Incident Persistence")
     print("=" * 64)
 
 
@@ -35,17 +35,20 @@ def print_alert(alert: Alert, index: int) -> None:
         alert: The Alert instance to display.
         index: The alert sequence number (1-based).
     """
-    duration = int((alert.window_end - alert.window_start).total_seconds())
-    user_list = ", ".join(alert.targeted_usernames) if alert.targeted_usernames else "unknown"
+    duration = max(1, int((alert.window_end - alert.window_start).total_seconds()))
+    user_list = ", ".join(alert.targeted_usernames) if alert.targeted_usernames else "none"
+    mitre_tag = f"[{alert.mitre_attack_id} {alert.mitre_attack_name}]" if alert.mitre_attack_id else "N/A"
 
     print(f"\n[ALERT #{index}] ----------------------------------------------")
+    print(f"  Rule ID:           {alert.rule_id} ({alert.rule_name})")
     print(f"  Severity:          [{alert.severity}]")
+    print(f"  MITRE ATT&CK:      {mitre_tag}")
     print(f"  Source IP:         {alert.source_ip}")
-    print(f"  Failed Attempts:   {alert.failure_count}")
+    print(f"  Event Count:       {alert.failure_count}")
     print(f"  Time Window:       {format_timestamp(alert.window_start)} -> {format_timestamp(alert.window_end)} ({duration}s)")
     print(f"  Targeted User(s):  {user_list}")
     print(f"  Summary:           {alert.description}")
-    print("  Recommended Action: Consider blocking/throttling IP at the firewall")
+    print(f"  Recommended Action: {alert.recommended_action}")
     print("-" * 55)
 
 
@@ -76,10 +79,10 @@ def run_siem(file_path: Path) -> int:
         return 1
 
     print(f"[*] Successfully ingested {len(events)} valid log event(s).")
-    print("[*] Running detection rule: 'Brute-Force Login (>=3 failures in 5m)'...")
+    print("[*] Running multi-rule detection engine (AUTH-001..004, FW-001, WEB-001)...")
 
-    # 3. Execute detection engine
-    alerts = detect_brute_force(events, threshold=3, window_minutes=5)
+    # 3. Execute detection engine across all rules
+    alerts = run_all_detection_rules(events)
 
     # 4. Display results
     print("\n" + "=" * 64)
@@ -87,9 +90,9 @@ def run_siem(file_path: Path) -> int:
     print("=" * 64)
 
     if not alerts:
-        print("\n[+] Clean run: No suspicious brute-force activity detected.")
+        print("\n[+] Clean run: No security anomalies detected.")
     else:
-        print(f"\n[!] Discovered {len(alerts)} suspicious incident(s):")
+        print(f"\n[!] Discovered {len(alerts)} security detection alert(s):")
         for idx, alert in enumerate(alerts, start=1):
             print_alert(alert, idx)
 
@@ -108,6 +111,9 @@ def run_siem(file_path: Path) -> int:
         print(f"\n[*] Incident Storage ({db_file.name}): {total_stored} incident(s) currently on file.")
 
     print("\n" + "=" * 64)
+    print(f"[*] Analysis complete at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 64)
+    return 0
     print(f"[*] Analysis complete at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 64)
     return 0
