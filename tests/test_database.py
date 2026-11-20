@@ -179,11 +179,21 @@ class TestMiniSIEMDatabase(unittest.TestCase):
         self.assertEqual(dup1, 0)
         self.assertEqual(count_incidents(self.db_path), 1)
 
+        # Check alerts table count
+        conn = sqlite3.connect(self.db_path)
+        self.assertEqual(conn.cursor().execute("SELECT count(*) FROM alerts").fetchone()[0], 1)
+        conn.close()
+
         # Second run with exact same alert: should save 0, 1 duplicate skipped
         saved2, dup2 = save_alerts([alert], self.db_path)
         self.assertEqual(saved2, 0)
         self.assertEqual(dup2, 1)
         self.assertEqual(count_incidents(self.db_path), 1)
+
+        # Alerts table should NOT have duplicated
+        conn = sqlite3.connect(self.db_path)
+        self.assertEqual(conn.cursor().execute("SELECT count(*) FROM alerts").fetchone()[0], 1)
+        conn.close()
 
         # Third run: 1 existing duplicate + 1 genuinely new alert
         new_alert = Alert(
@@ -199,6 +209,11 @@ class TestMiniSIEMDatabase(unittest.TestCase):
         self.assertEqual(saved3, 1)
         self.assertEqual(dup3, 1)
         self.assertEqual(count_incidents(self.db_path), 2)
+
+        # Alerts table should have exactly 2 distinct rows
+        conn = sqlite3.connect(self.db_path)
+        self.assertEqual(conn.cursor().execute("SELECT count(*) FROM alerts").fetchone()[0], 2)
+        conn.close()
 
     def test_parameterized_query_sql_injection_defense(self):
         """Verify SQL injection payloads in IP or username do not break the database or execute SQL."""

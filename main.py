@@ -1,18 +1,28 @@
 """
 Mini-SIEM Main Runner.
 
-Entry point for the Mini-SIEM application. Loads authentication logs from
-a CSV file, executes detection rules, and displays alerts in a clear,
-analyst-friendly format in the terminal.
+Entry point for the Mini-SIEM application. Loads authentication and security logs
+from a CSV file, ingests raw telemetry into SQLite, executes multi-rule detections,
+correlates alerts into incidents, and displays reports in the terminal.
 """
 
 from datetime import datetime
+import hashlib
 from pathlib import Path
 import sys
 
+from app.database import (
+    DEFAULT_DB_PATH,
+    count_incidents,
+    get_uploaded_log_by_hash,
+    init_db,
+    save_security_events,
+    save_uploaded_log,
+)
 from app.services.csv_parser import load_logs
-from app.services.detection_engine import Alert, detect_brute_force, run_all_detection_rules
-from app.database import count_incidents, init_db, save_alerts, DEFAULT_DB_PATH
+from app.services.detection_engine import Alert, run_all_detection_rules
+from app.services.incident_correlator import correlate_alerts, persist_correlated_incidents
+
 
 def format_timestamp(dt: datetime) -> str:
     """Formats datetime for clean terminal presentation."""
@@ -54,7 +64,8 @@ def print_alert(alert: Alert, index: int) -> None:
 
 def run_siem(file_path: Path) -> int:
     """
-    Coordinates the log ingestion, rule detection, and alert output.
+    Coordinates the log ingestion, raw telemetry persistence, rule detection,
+    incident correlation, and terminal output.
 
     Args:
         file_path: Path to the CSV log file.
@@ -79,12 +90,46 @@ def run_siem(file_path: Path) -> int:
         return 1
 
     print(f"[*] Successfully ingested {len(events)} valid log event(s).")
-    print("[*] Running multi-rule detection engine (AUTH-001..004, FW-001, WEB-001)...")
 
-    # 3. Execute detection engine across all rules
+    # 3. Initialize database and persist raw telemetry
+    db_file = DEFAULT_DB_PATH
+    init_db(db_file)
+
+    try:
+        content_bytes = file_path.read_bytes()
+        file_hash = hashlib.sha256(content_bytes).hexdigest()
+        existing_log = get_uploaded_log_by_hash(file_hash, db_path=db_file)
+
+        if existing_log:
+            upload_id = existing_log["id"]
+            print(f"[*] File previously registered in database (Upload #{upload_id}).")
+        else:
+            upload_id = save_uploaded_log(
+                filename=file_path.name,
+                total_rows=len(events) + len(warnings),
+                valid_events=len(events),
+                rejected_rows=len(warnings),
+                db_path=db_file,
+                file_hash=file_hash,
+            )
+            print(f"[*] Telemetry metadata saved to uploaded_logs (Upload #{upload_id}).")
+
+        # Persist raw events into security_events table with deduplication
+        stored_events, dup_events = save_security_events(
+            events=events,
+            upload_id=upload_id,
+            db_path=db_file,
+        )
+        print(f"[*] Telemetry Events Storage: {stored_events} newly stored, {dup_events} duplicate(s) skipped.")
+
+    except Exception as err:
+        print(f"[!] Warning: Failed to persist raw telemetry: {err}")
+
+    # 4. Execute detection engine across all rules
+    print("[*] Running multi-rule detection engine (AUTH-001..004, FW-001, WEB-001)...")
     alerts = run_all_detection_rules(events)
 
-    # 4. Display results
+    # 5. Display detection report
     print("\n" + "=" * 64)
     print("                         DETECTION REPORT")
     print("=" * 64)
@@ -96,11 +141,10 @@ def run_siem(file_path: Path) -> int:
         for idx, alert in enumerate(alerts, start=1):
             print_alert(alert, idx)
 
-    # 5. Persist alerts to SQLite database with deduplication
-    db_file = DEFAULT_DB_PATH
-    init_db(db_file)
+    # 6. Correlate alerts into unified incidents and persist to database
     if alerts:
-        saved_count, dup_count = save_alerts(alerts, db_file)
+        correlated = correlate_alerts(alerts)
+        saved_count, dup_count = persist_correlated_incidents(correlated, db_path=db_file)
         total_stored = count_incidents(db_file)
         print(f"\n[*] Incident Storage ({db_file.name}):")
         print(f"    - {saved_count} incident(s) newly saved to database")
@@ -114,14 +158,10 @@ def run_siem(file_path: Path) -> int:
     print(f"[*] Analysis complete at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 64)
     return 0
-    print(f"[*] Analysis complete at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 64)
-    return 0
 
 
 def main() -> None:
     """Main CLI handler."""
-    # Allow specifying a custom log file or default to sample_logs.csv in the script's directory
     default_log_file = Path(__file__).parent / "sample_logs" / "sample_logs.csv"
     if len(sys.argv) > 1:
         target_file = Path(sys.argv[1])

@@ -114,6 +114,24 @@ class TestIncidentAndDashboardApi(unittest.TestCase):
         )
         self.assertEqual(bad_patch.status_code, 422)
 
+        # 5. Export report as Markdown
+        export_md = self.client.get(f"/api/incidents/{inc_id}/export?format=markdown")
+        self.assertEqual(export_md.status_code, 200)
+        self.assertIn("Security Incident Investigation Report", export_md.text)
+        self.assertIn("203.0.113.42", export_md.text)
+        self.assertIn("text/markdown", export_md.headers.get("content-type", ""))
+
+        # 6. Export report as JSON
+        export_json = self.client.get(f"/api/incidents/{inc_id}/export?format=json")
+        self.assertEqual(export_json.status_code, 200)
+        json_data = export_json.json()
+        self.assertEqual(json_data["id"], inc_id)
+        self.assertEqual(json_data["source_ip"], "203.0.113.42")
+
+        # 7. Non-existent incident export -> 404
+        export_404 = self.client.get("/api/incidents/99999/export")
+        self.assertEqual(export_404.status_code, 404)
+
     def test_run_detection_batch_endpoint(self):
         """Verify POST /api/alerts/run-detection executes detection on stored events."""
         # Upload brute force events

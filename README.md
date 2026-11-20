@@ -114,13 +114,13 @@ MiniSIEM/
 │   ├── firewall_sample.csv         # Multi-port scanning network telemetry
 │   └── web_sample.csv              # High-volume web server HTTP access flood
 │
-├── tests/                          # 50 Automated unit tests
+├── tests/                          # 52 Automated unit tests
 │   ├── test_api.py                 # API uploads, hashing, duplicate prevention & pagination
 │   ├── test_database.py            # SQLite schema migrations, constraints & persistence
 │   ├── test_detector.py            # Baseline brute force & sliding window logic
 │   ├── test_rules.py               # Dedicated tests for all 6 detection rules
 │   ├── test_correlation.py         # Incident correlation & multi-stage escalation
-│   ├── test_incident_api.py        # Incident CRUD, PATCH status, and dashboard stats
+│   ├── test_incident_api.py        # Incident CRUD, PATCH status, export reports, and dashboard stats
 │   └── test_mitre.py               # MITRE ATT&CK mapping lookups
 │
 ├── main.py                         # Command-line SOC analysis runner
@@ -202,6 +202,7 @@ python main.py sample_logs/web_sample.csv
 | `POST` | `/api/alerts/run-detection` | Executes all detection rules across stored events and correlates incidents. |
 | `GET` | `/api/incidents` | Lists correlated incidents with `status` and `severity` filters. |
 | `GET` | `/api/incidents/{incident_id}` | Returns comprehensive incident details, related alerts, event timeline, and MITRE playbooks. |
+| `GET` | `/api/incidents/{incident_id}/export` | Exports comprehensive SOC incident briefing report in Markdown (`TLP:AMBER`) or JSON format. |
 | `PATCH` | `/api/incidents/{incident_id}` | Updates incident lifecycle status (`Open`, `Investigating`, `Resolved`, `False Positive`). |
 | `GET` | `/api/dashboard/stats` | Returns real-time aggregate metrics for dashboard KPI cards and Chart.js charts. |
 
@@ -220,17 +221,17 @@ pytest -v
 ### Verified Test Results
 ```
 ============================== test session starts ==============================
-collected 50 items
+collected 52 items
 
-tests/test_api.py::TestMiniSIEMApi .............                          [ 26%]
-tests/test_correlation.py::TestIncidentCorrelator ...                     [ 32%]
-tests/test_database.py::TestMiniSIEMDatabase .........                    [ 50%]
-tests/test_detector.py::TestMiniSIEMDetector ........                     [ 66%]
-tests/test_incident_api.py::TestIncidentAndDashboardApi ....              [ 74%]
+tests/test_api.py::TestMiniSIEMApi .............                          [ 25%]
+tests/test_correlation.py::TestIncidentCorrelator .....                    [ 34%]
+tests/test_database.py::TestMiniSIEMDatabase .........                    [ 51%]
+tests/test_detector.py::TestMiniSIEMDetector ........                     [ 67%]
+tests/test_incident_api.py::TestIncidentAndDashboardApi ....              [ 75%]
 tests/test_mitre.py::TestMitreMapper ....                                 [ 82%]
 tests/test_rules.py::TestDetectionRules .........                         [100%]
 
-======================== 50 passed, 1 warning in 8.55s ========================
+======================== 52 passed, 1 warning in 12.22s ========================
 ```
 
 ---

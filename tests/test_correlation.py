@@ -134,6 +134,83 @@ class TestIncidentCorrelator(unittest.TestCase):
         self.assertEqual(dup2, 1)
         self.assertEqual(count_incidents(self.test_db_path), 1)
 
+    def test_multi_stage_attack_requires_matching_username(self):
+        """Verify that AUTH-001 and AUTH-002 on DIFFERENT usernames from same IP does NOT falsely escalate to CRITICAL."""
+        base_time = datetime(2026, 10, 20, 9, 0, 0)
+        alerts = [
+            Alert(
+                source_ip="192.168.1.10",
+                failure_count=5,
+                window_start=base_time,
+                window_end=base_time + timedelta(minutes=5),
+                severity="HIGH",
+                description="Brute force on admin",
+                targeted_usernames=["admin"],
+                rule_id="AUTH-001",
+                mitre_attack_id="T1110",
+            ),
+            Alert(
+                source_ip="192.168.1.10",
+                failure_count=2,
+                window_start=base_time + timedelta(minutes=6),
+                window_end=base_time + timedelta(minutes=7),
+                severity="MEDIUM",
+                description="Success after failure for legitimate user alice",
+                targeted_usernames=["alice"],
+                rule_id="AUTH-002",
+                mitre_attack_id="T1078",
+            ),
+        ]
+
+        incidents = correlate_alerts(alerts)
+        self.assertEqual(len(incidents), 1)
+        inc = incidents[0]
+        # Should NOT escalate to CRITICAL because targeted users differ
+        self.assertEqual(inc.severity, "HIGH")
+        self.assertNotIn("CRITICAL Multi-Stage Attack", inc.description)
+
+    def test_alerts_table_deduplication_on_repeated_persistence(self):
+        """Verify alerts linked to correlated incidents are not duplicated in the alerts table."""
+        base_time = datetime(2026, 10, 20, 9, 0, 0)
+        alert_obj = Alert(
+            source_ip="10.0.0.99",
+            failure_count=5,
+            window_start=base_time,
+            window_end=base_time + timedelta(minutes=5),
+            severity="HIGH",
+            description="Persistent test alert",
+            targeted_usernames=["admin"],
+            rule_id="AUTH-001",
+            mitre_attack_id="T1110",
+        )
+        inc = CorrelatedIncident(
+            source_ip="10.0.0.99",
+            failure_count=5,
+            window_start=base_time,
+            window_end=base_time + timedelta(minutes=5),
+            severity="HIGH",
+            status="Open",
+            description="Persistent test incident",
+            targeted_usernames=["admin"],
+            rule_id="AUTH-001",
+            mitre_technique="T1110",
+            recommended_action="Block IP",
+            alerts=[alert_obj],
+        )
+
+        persist_correlated_incidents([inc], db_path=self.test_db_path)
+
+        import sqlite3
+        conn = sqlite3.connect(self.test_db_path)
+        alert_count_1 = conn.cursor().execute("SELECT count(*) FROM alerts").fetchone()[0]
+        self.assertEqual(alert_count_1, 1)
+
+        # Run persistence again with same incident & alert
+        persist_correlated_incidents([inc], db_path=self.test_db_path)
+        alert_count_2 = conn.cursor().execute("SELECT count(*) FROM alerts").fetchone()[0]
+        self.assertEqual(alert_count_2, 1)
+        conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

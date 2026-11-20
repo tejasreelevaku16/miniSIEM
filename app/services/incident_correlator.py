@@ -106,9 +106,24 @@ def correlate_alerts(
                 if user
             ))
 
-            # Detect multi-stage progression
+            # Detect multi-stage progression with entity (username) verification
             rule_ids = set(a.rule_id for a in cluster)
-            has_multi_stage = ("AUTH-001" in rule_ids and "AUTH-002" in rule_ids)
+            has_auth1 = "AUTH-001" in rule_ids
+            has_auth2 = "AUTH-002" in rule_ids
+
+            if has_auth1 and has_auth2:
+                auth1_users = set(
+                    u.lower() for a in cluster if a.rule_id == "AUTH-001" for u in a.targeted_usernames if u
+                )
+                auth2_users = set(
+                    u.lower() for a in cluster if a.rule_id == "AUTH-002" for u in a.targeted_usernames if u
+                )
+                if auth1_users and auth2_users:
+                    has_multi_stage = bool(auth1_users & auth2_users)
+                else:
+                    has_multi_stage = True
+            else:
+                has_multi_stage = False
 
             severities = [a.severity for a in cluster]
             incident_severity = _escalate_severity(severities, has_multi_stage=has_multi_stage)
@@ -242,7 +257,7 @@ def persist_correlated_incidents(
                     user = alert.targeted_usernames[0] if alert.targeted_usernames else None
 
                     cursor.execute("""
-                        INSERT INTO alerts (
+                        INSERT OR IGNORE INTO alerts (
                             rule_id,
                             rule_name,
                             source_ip,

@@ -346,6 +346,21 @@ select {
   cursor: pointer;
 }
 
+.search-input {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  min-width: 180px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
 /* ==========================================================
    CHARTS & ANALYTICS
    ========================================================== */

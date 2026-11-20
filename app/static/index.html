@@ -136,6 +136,7 @@
         <div class="panel-header">
           <h2>Security Incident Queue</h2>
           <div class="filter-controls">
+            <input type="text" id="filter-incident-search" placeholder="Search IP, user, rule..." class="search-input">
             <select id="filter-incident-status">
               <option value="">All Statuses</option>
               <option value="Open">Open</option>
@@ -224,6 +225,7 @@
         <div class="panel-header">
           <h2>Security Log Telemetry Explorer</h2>
           <div class="pagination-controls">
+            <input type="text" id="filter-events-search" placeholder="Filter by IP, user, type..." class="search-input">
             <button id="btn-events-prev" class="btn btn-sm">◀ Previous</button>
             <span id="events-page-info">Showing 0-0 of 0</span>
             <button id="btn-events-next" class="btn btn-sm">Next ▶</button>
@@ -319,6 +321,8 @@
                   <option value="False Positive">False Positive</option>
                 </select>
                 <button id="btn-modal-save-status" class="btn btn-sm btn-primary">Save Status</button>
+                <button id="btn-modal-export-md" class="btn btn-sm btn-secondary" onclick="exportActiveIncident('markdown')">📄 Export Report (MD)</button>
+                <button id="btn-modal-export-json" class="btn btn-sm btn-secondary" onclick="exportActiveIncident('json')">💾 Export JSON</button>
               </div>
             </div>
           </div>

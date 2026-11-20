@@ -8,6 +8,8 @@ let currentEventsOffset = 0;
 const EVENTS_PAGE_SIZE = 25;
 let charts = {};
 let activeIncidentId = null;
+let cachedIncidents = [];
+let cachedEvents = [];
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -330,8 +332,51 @@ function updateCharts(data) {
 function initFilters() {
   document.getElementById("filter-incident-status").addEventListener("change", loadIncidents);
   document.getElementById("filter-incident-severity").addEventListener("change", loadIncidents);
+  const incSearch = document.getElementById("filter-incident-search");
+  if (incSearch) incSearch.addEventListener("input", filterIncidentsLocal);
+  const evSearch = document.getElementById("filter-events-search");
+  if (evSearch) evSearch.addEventListener("input", filterEventsLocal);
   document.getElementById("filter-alert-rule").addEventListener("change", loadAlerts);
   document.getElementById("filter-alert-severity").addEventListener("change", loadAlerts);
+}
+
+function filterIncidentsLocal() {
+  const query = (document.getElementById("filter-incident-search")?.value || "").trim().toLowerCase();
+  if (!query) {
+    renderIncidents(cachedIncidents);
+    return;
+  }
+  const filtered = cachedIncidents.filter(inc => {
+    return (
+      String(inc.id).includes(query) ||
+      (inc.source_ip && inc.source_ip.toLowerCase().includes(query)) ||
+      (inc.targeted_usernames && inc.targeted_usernames.toLowerCase().includes(query)) ||
+      (inc.rule_id && inc.rule_id.toLowerCase().includes(query)) ||
+      (inc.description && inc.description.toLowerCase().includes(query)) ||
+      (inc.mitre_technique && inc.mitre_technique.toLowerCase().includes(query))
+    );
+  });
+  renderIncidents(filtered);
+}
+
+function filterEventsLocal() {
+  const query = (document.getElementById("filter-events-search")?.value || "").trim().toLowerCase();
+  if (!query) {
+    renderSecurityEvents(cachedEvents);
+    return;
+  }
+  const filtered = cachedEvents.filter(e => {
+    return (
+      String(e.id).includes(query) ||
+      (e.source_ip && e.source_ip.toLowerCase().includes(query)) ||
+      (e.username && e.username.toLowerCase().includes(query)) ||
+      (e.event_type && e.event_type.toLowerCase().includes(query)) ||
+      (e.outcome && e.outcome.toLowerCase().includes(query)) ||
+      (e.source && e.source.toLowerCase().includes(query)) ||
+      (e.user_agent && e.user_agent.toLowerCase().includes(query))
+    );
+  });
+  renderSecurityEvents(filtered);
 }
 
 async function loadIncidents() {
@@ -346,7 +391,8 @@ async function loadIncidents() {
     const res = await fetch(`/api/incidents?${params.toString()}`);
     if (!res.ok) throw new Error("Failed to load incidents");
     const data = await res.json();
-    renderIncidents(data.incidents || []);
+    cachedIncidents = data.incidents || [];
+    filterIncidentsLocal();
   } catch (err) {
     console.error("Load incidents error:", err);
     document.getElementById("tbody-incidents").innerHTML =
@@ -487,6 +533,14 @@ async function saveModalIncidentStatus() {
   loadIncidents();
 }
 
+function exportActiveIncident(format = "markdown") {
+  if (!activeIncidentId) {
+    showBanner("No active incident selected to export.", "warning");
+    return;
+  }
+  window.open(`/api/incidents/${activeIncidentId}/export?format=${format}`, "_blank");
+}
+
 /* ==========================================================
    4. ALERTS FEED
    ========================================================== */
@@ -549,7 +603,8 @@ async function loadSecurityEvents() {
     document.getElementById("btn-events-prev").disabled = (currentEventsOffset === 0);
     document.getElementById("btn-events-next").disabled = (end >= total);
 
-    renderSecurityEvents(data.events || []);
+    cachedEvents = data.events || [];
+    filterEventsLocal();
   } catch (err) {
     console.error("Load events error:", err);
     document.getElementById("tbody-events").innerHTML =

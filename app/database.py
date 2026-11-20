@@ -163,7 +163,8 @@ def init_db(db_path: str | Path = DEFAULT_DB_PATH) -> None:
                     mitre_technique_name TEXT,
                     incident_id INTEGER,
                     created_at TEXT NOT NULL,
-                    FOREIGN KEY(incident_id) REFERENCES incidents(id) ON DELETE SET NULL
+                    FOREIGN KEY(incident_id) REFERENCES incidents(id) ON DELETE SET NULL,
+                    CONSTRAINT uq_alert UNIQUE (rule_id, source_ip, first_observed, last_observed)
                 );
             """)
 
@@ -307,6 +308,26 @@ def init_db(db_path: str | Path = DEFAULT_DB_PATH) -> None:
                 ON uploaded_logs(file_hash);
             """)
 
+            # --------------------------------------------------
+            # 7. ALERTS DEDUPLICATION & UNIQUE INDEX
+            # --------------------------------------------------
+
+            # Remove any historical duplicate alerts created by prior repeated detection runs
+            cursor.execute("""
+                DELETE FROM alerts
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM alerts
+                    GROUP BY rule_id, source_ip, first_observed, last_observed
+                );
+            """)
+
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                idx_alerts_dedup
+                ON alerts(rule_id, source_ip, first_observed, last_observed);
+            """)
+
             # Transaction is committed by the connection context manager.
 
     finally:
@@ -433,7 +454,7 @@ def save_alerts(
                 )
 
                 cursor.execute("""
-                    INSERT INTO alerts (
+                    INSERT OR IGNORE INTO alerts (
                         rule_id,
                         rule_name,
                         source_ip,

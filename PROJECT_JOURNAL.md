@@ -154,21 +154,36 @@ This journal tracks engineering milestones, implemented features, bugs fixed, ar
 
 ---
 
+## Milestone 7: Technical Audit, Ingestion Pipeline Synchronization & Architecture Hardening
+- **Status**: Completed & Verified
+- **Verification Date**: 2026-11-20
+- **Test Results**: 52/52 tests passed across 7 test suites
+
+### Implemented Features & Bug Fixes
+- [x] **Resolved Incident #18 Telemetry Inconsistency**: Refactored CLI runner (`main.py`) to store raw CSV telemetry into `security_events` and file metadata into `uploaded_logs` using SHA-256 deduplication. Fixed the bug where Incident #18 reported 33 events in metadata but 0 rows in the investigation timeline.
+- [x] **Resolved Event Count Discrepancy**: Guaranteed that all log ingestion pathways synchronize `security_events` with incident counts, bringing total database events to 52 across test datasets.
+- [x] **Alert Table Deduplication & Unique Constraint**: Added composite constraint `CONSTRAINT uq_alert UNIQUE (rule_id, source_ip, first_observed, last_observed)` and unique index `idx_alerts_dedup`. Applied `INSERT OR IGNORE` in `app/database.py` and `app/services/incident_correlator.py`. Historical duplicate alert rows were safely cleaned up during non-destructive migration.
+- [x] **Entity-Aware Incident Correlation**: Refined `correlate_alerts()` to verify matching usernames between `AUTH-001` (Brute-Force) and `AUTH-002` (Success after failure) before escalating to `CRITICAL Multi-Stage Attack`, eliminating false-positive escalations on shared corporate VPNs or NAT gateways.
+- [x] **Incident Briefing Report Export**: Added `GET /api/incidents/{incident_id}/export` endpoint supporting downloadable Markdown (`TLP:AMBER`) and JSON incident reports for SOC analyst ticketing and handoffs.
+- [x] **Frontend Investigation & Search Enhancements**: Added real-time text search filters for Incidents and Events in `app/static/index.html` and `app/static/app.js`, along with one-click Markdown and JSON export buttons in the Investigation Drawer.
+
+---
+
 ## Verification Test Results (Final Run)
 
 Command: `pytest -v`
 ```
 ============================== test session starts ==============================
-collected 50 items
+collected 52 items
 
-tests/test_api.py::TestMiniSIEMApi .............                          [ 26%]
-tests/test_correlation.py::TestIncidentCorrelator ...                     [ 32%]
-tests/test_database.py::TestMiniSIEMDatabase .........                    [ 50%]
-tests/test_detector.py::TestMiniSIEMDetector ........                     [ 66%]
-tests/test_incident_api.py::TestIncidentAndDashboardApi ....              [ 74%]
+tests/test_api.py::TestMiniSIEMApi .............                          [ 25%]
+tests/test_correlation.py::TestIncidentCorrelator .....                    [ 34%]
+tests/test_database.py::TestMiniSIEMDatabase .........                    [ 51%]
+tests/test_detector.py::TestMiniSIEMDetector ........                     [ 67%]
+tests/test_incident_api.py::TestIncidentAndDashboardApi ....              [ 75%]
 tests/test_mitre.py::TestMitreMapper ....                                 [ 82%]
 tests/test_rules.py::TestDetectionRules .........                         [100%]
 
-======================== 50 passed, 1 warning in 8.55s ========================
+======================== 52 passed, 1 warning in 12.22s ========================
 ```
-100% test pass rate across all 50 automated tests.
+100% test pass rate across all 52 automated tests.
